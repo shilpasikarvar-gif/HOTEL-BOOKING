@@ -1,0 +1,305 @@
+import tkinter as tk
+from tkinter import ttk, messagebox
+import csv
+import os
+from datetime import datetime
+
+FILE = "hotel_bookings.csv"
+
+# Room types and prices per night
+ROOMS = {
+    "Single Room": (101, 102, 103, 104, 105),
+    "Double Room": (201, 202, 203, 204, 205),
+    "Deluxe Room": (301, 302, 303),
+    "Suite Room": (401, 402)
+}
+
+PRICES = {
+    "Single Room": 1500,
+    "Double Room": 2500,
+    "Deluxe Room": 4000,
+    "Suite Room": 6000
+}
+
+# Create CSV file
+if not os.path.exists(FILE):
+    with open(FILE, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "Booking ID", "Guest Name", "Phone",
+            "Room Type", "Room Number",
+            "Check In", "Check Out",
+            "Guests", "Total Price"
+        ])
+
+
+def load_bookings():
+    with open(FILE, "r", newline="") as f:
+        return list(csv.DictReader(f))
+
+
+def calculate_nights(checkin, checkout):
+    d1 = datetime.strptime(checkin, "%Y-%m-%d")
+    d2 = datetime.strptime(checkout, "%Y-%m-%d")
+    return (d2 - d1).days
+
+
+def book_room():
+    name = name_entry.get().strip()
+    phone = phone_entry.get().strip()
+    room_type = room_box.get()
+    checkin = checkin_entry.get().strip()
+    checkout = checkout_entry.get().strip()
+    guests = guests_box.get()
+
+    if not name or not phone or not room_type or not checkin or not checkout or not guests:
+        messagebox.showwarning("Warning", "Please fill all fields!")
+        return
+
+    if not phone.isdigit() or len(phone) != 10:
+        messagebox.showerror("Error", "Enter a valid 10-digit phone number!")
+        return
+
+    try:
+        nights = calculate_nights(checkin, checkout)
+        if nights <= 0:
+            messagebox.showerror("Error", "Checkout must be after check-in!")
+            return
+
+        if datetime.strptime(checkin, "%Y-%m-%d").date() < datetime.today().date():
+            messagebox.showerror("Error", "Check-in cannot be in the past!")
+            return
+
+    except ValueError:
+        messagebox.showerror(
+            "Error", "Date format must be YYYY-MM-DD (example: 2026-12-15)"
+        )
+        return
+
+    guest_count = int(guests)
+
+    # Room availability
+    bookings = load_bookings()
+    available_room = None
+
+    for room_number in ROOMS[room_type]:
+        conflict = False
+
+        for booking in bookings:
+            if booking["Room Number"] == str(room_number):
+                old_in = datetime.strptime(booking["Check In"], "%Y-%m-%d").date()
+                old_out = datetime.strptime(booking["Check Out"], "%Y-%m-%d").date()
+                new_in = datetime.strptime(checkin, "%Y-%m-%d").date()
+                new_out = datetime.strptime(checkout, "%Y-%m-%d").date()
+
+                # Date overlap check
+                if new_in < old_out and new_out > old_in:
+                    conflict = True
+                    break
+
+        if not conflict:
+            available_room = room_number
+            break
+
+    if available_room is None:
+        messagebox.showerror("Unavailable", "No room available for these dates!")
+        return
+
+    total_price = PRICES[room_type] * nights
+
+    booking_id = "HB" + str(int(datetime.now().timestamp()))
+
+    with open(FILE, "a", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            booking_id, name, phone, room_type,
+            available_room, checkin, checkout,
+            guest_count, total_price
+        ])
+
+    messagebox.showinfo(
+        "Booking Successful",
+        f"Hotel booking confirmed!\n\n"
+        f"Booking ID: {booking_id}\n"
+        f"Room Number: {available_room}\n"
+        f"Total Price: ₹{total_price}"
+    )
+
+    clear_fields()
+    show_bookings()
+
+
+def show_bookings():
+    for row in table.get_children():
+        table.delete(row)
+
+    for booking in load_bookings():
+        table.insert("", tk.END, values=(
+            booking["Booking ID"],
+            booking["Guest Name"],
+            booking["Phone"],
+            booking["Room Type"],
+            booking["Room Number"],
+            booking["Check In"],
+            booking["Check Out"],
+            booking["Guests"],
+            booking["Total Price"]
+        ))
+
+
+def cancel_booking():
+    selected = table.selection()
+
+    if not selected:
+        messagebox.showwarning("Warning", "Select a booking to cancel!")
+        return
+
+    booking_id = table.item(selected[0], "values")[0]
+
+    bookings = load_bookings()
+    bookings = [b for b in bookings if b["Booking ID"] != booking_id]
+
+    with open(FILE, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "Booking ID", "Guest Name", "Phone",
+            "Room Type", "Room Number",
+            "Check In", "Check Out",
+            "Guests", "Total Price"
+        ])
+
+        for b in bookings:
+            writer.writerow([
+                b["Booking ID"], b["Guest Name"], b["Phone"],
+                b["Room Type"], b["Room Number"],
+                b["Check In"], b["Check Out"],
+                b["Guests"], b["Total Price"]
+            ])
+
+    messagebox.showinfo("Success", "Booking cancelled successfully!")
+    show_bookings()
+
+
+def clear_fields():
+    name_entry.delete(0, tk.END)
+    phone_entry.delete(0, tk.END)
+    checkin_entry.delete(0, tk.END)
+    checkout_entry.delete(0, tk.END)
+    room_box.set("")
+    guests_box.set("")
+
+
+# Main Window
+root = tk.Tk()
+root.title("Hotel Booking Management System")
+root.geometry("1150x700")
+root.configure(bg="#eaf2f8")
+
+# Title
+tk.Label(
+    root,
+    text="HOTEL BOOKING MANAGEMENT SYSTEM",
+    font=("Arial", 22, "bold"),
+    bg="#eaf2f8",
+    fg="#154360"
+).pack(pady=15)
+
+# Booking Form
+form = tk.Frame(root, bg="white", padx=25, pady=20)
+form.pack(padx=20, fill="x")
+
+# Guest Name
+tk.Label(form, text="Guest Name", bg="white").grid(row=0, column=0, sticky="w", pady=8)
+name_entry = tk.Entry(form, width=30)
+name_entry.grid(row=0, column=1, padx=15)
+
+# Phone
+tk.Label(form, text="Phone Number", bg="white").grid(row=1, column=0, sticky="w", pady=8)
+phone_entry = tk.Entry(form, width=30)
+phone_entry.grid(row=1, column=1, padx=15)
+
+# Room Type
+tk.Label(form, text="Room Type", bg="white").grid(row=2, column=0, sticky="w", pady=8)
+room_box = ttk.Combobox(
+    form, values=list(ROOMS.keys()), width=27, state="readonly"
+)
+room_box.grid(row=2, column=1, padx=15)
+
+# Check-in
+tk.Label(form, text="Check-in (YYYY-MM-DD)", bg="white").grid(row=3, column=0, sticky="w", pady=8)
+checkin_entry = tk.Entry(form, width=30)
+checkin_entry.grid(row=3, column=1, padx=15)
+
+# Check-out
+tk.Label(form, text="Check-out (YYYY-MM-DD)", bg="white").grid(row=4, column=0, sticky="w", pady=8)
+checkout_entry = tk.Entry(form, width=30)
+checkout_entry.grid(row=4, column=1, padx=15)
+
+# Guests
+tk.Label(form, text="Number of Guests", bg="white").grid(row=5, column=0, sticky="w", pady=8)
+guests_box = ttk.Combobox(
+    form, values=["1", "2", "3", "4", "5", "6"], width=27, state="readonly"
+)
+guests_box.grid(row=5, column=1, padx=15)
+
+# Prices
+tk.Label(
+    form,
+    text="Room Prices (Per Night)\nSingle ₹1500 | Double ₹2500\nDeluxe ₹4000 | Suite ₹6000",
+    font=("Arial", 10, "bold"),
+    bg="white",
+    fg="#2874a6"
+).grid(row=0, column=2, rowspan=3, padx=35)
+
+# Buttons
+button_frame = tk.Frame(form, bg="white")
+button_frame.grid(row=0, column=3, rowspan=6, padx=30)
+
+tk.Button(
+    button_frame, text="Book Room", command=book_room,
+    bg="#28a745", fg="white", width=18, height=2
+).pack(pady=8)
+
+tk.Button(
+    button_frame, text="Clear Fields", command=clear_fields,
+    bg="#f0ad4e", width=18, height=2
+).pack(pady=8)
+
+tk.Button(
+    button_frame, text="Cancel Booking", command=cancel_booking,
+    bg="#dc3545", fg="white", width=18, height=2
+).pack(pady=8)
+
+# Booking Table
+tk.Label(
+    root, text="Hotel Booking Records",
+    font=("Arial", 15, "bold"), bg="#eaf2f8"
+).pack(pady=10)
+
+columns = (
+    "Booking ID", "Guest Name", "Phone", "Room Type",
+    "Room No", "Check In", "Check Out", "Guests", "Price"
+)
+
+table_frame = tk.Frame(root)
+table_frame.pack(padx=20, pady=10, fill="both", expand=True)
+
+scrollbar = ttk.Scrollbar(table_frame, orient="vertical")
+scrollbar.pack(side="right", fill="y")
+
+table = ttk.Treeview(
+    table_frame, columns=columns, show="headings",
+    yscrollcommand=scrollbar.set
+)
+
+scrollbar.config(command=table.yview)
+
+for col in columns:
+    table.heading(col, text=col)
+    table.column(col, width=120, anchor="center")
+
+table.pack(fill="both", expand=True)
+
+show_bookings()
+
+root.mainloop()
